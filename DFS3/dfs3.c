@@ -40,6 +40,8 @@
 
 #define BUFFER (2048) 
 
+#define KEY (255)
+
 /**************************************************************************************
 *                                   Global declaration
 **************************************************************************************/
@@ -87,6 +89,7 @@ status folder_creation_user();
 status Login();
 status list_files();
 status get_file();
+void create_folder();
 
 /***************************************************************
 *                      Main Function
@@ -166,6 +169,22 @@ int main(int argc, char *argv[])
 			{
 				get_file();
 			}
+		}
+		else if(strcmp(command,"MKDIR")==0)
+		{
+			Login();
+			if(validity == 1)
+			{
+				create_folder();
+			}
+		}
+		else if(strcmp(command,"EXIT")==0)
+		{
+			exit(1);
+		}
+		else
+		{
+			printf("Invalid command\n");
 		}
 	}
 
@@ -259,6 +278,9 @@ status receive_file()
 	int count = 0;
 	char chunk_filename[SIZE_STR];
 	char Chunk_file_path[100];
+	char chunk_subfolder[SIZE_STR];
+	char folder_exists[200];
+
 	int packets;
 
 	while(count<2)
@@ -269,22 +291,45 @@ status receive_file()
 
 		//receive chunk filename
 		memset(chunk_filename,0,SIZE_STR);
+		memset(folder_exists,0,SIZE_STR);
 		memset(Chunk_file_path,0,sizeof(Chunk_file_path));
+		memset(chunk_subfolder,0,sizeof(chunk_subfolder));
 
 		recv(new_socket,chunk_filename ,SIZE_STR, 0); //1
-		
-
 		printf("Chunk filename %s\n",chunk_filename);
 
-		sprintf(Chunk_file_path,"%s/%s",user.username,chunk_filename);
+		recv(new_socket,chunk_subfolder ,SIZE_STR, 0); //1.1
+		printf("Chunk subfolder %s\n",chunk_subfolder);
+
+		sprintf(folder_exists,"%s/%s",user.username,chunk_subfolder);
+
+
+		if(strlen(chunk_subfolder) > 0)
+		{
+			DIR *dir = opendir(folder_exists);
+			if(dir)
+			{
+				printf("User's Sub folder exists in the server\n");
+			}
+			else
+			{
+				printf("User's Sub folder do not exists in the server\nCreating sub folder");
+				char cmd[100];
+
+				// creating new folder for the user
+				sprintf(cmd,"mkdir -p %s",folder_exists);
+
+				system(cmd);
+			}
+			sprintf(Chunk_file_path,"%s/%s/%s",user.username,chunk_subfolder,chunk_filename);
+		}
+		else
+			sprintf(Chunk_file_path,"%s/%s",user.username,chunk_filename);
 
 		recv(new_socket,&chunk_size ,sizeof(int), 0); //2
-		
-
 		printf("Chunk size : %d\n",chunk_size);
 
 		recv(new_socket,&packets ,sizeof(int), 0); //3
-
 		printf("packets : %d\n",packets);
 
 		file_recv = NULL;
@@ -298,6 +343,11 @@ status receive_file()
 				memset(&frame,0,sizeof(frame));
 				
 				recv(new_socket,&frame ,sizeof(frame), 0); //4
+
+				for(int elt =0; elt<frame.length ; elt++)
+				{	
+					frame.file_data[elt] ^= KEY;
+				}
 
 				fwrite(frame.file_data,1,frame.length,file_recv);
 
@@ -320,8 +370,6 @@ status receive_file()
 	}
 	return SUCCESS;
 }	
-
-
 
 
 status Login()
@@ -370,7 +418,19 @@ status Login()
 status list_files()
 {
 	char list_command[100];
-	sprintf(list_command,"ls -r %s > list.log",user.username);
+	char sub_folder[40];
+	memset(sub_folder,0,sizeof(sub_folder));
+	
+	recv(new_socket, sub_folder ,40, 0);
+
+		printf("Subfolder name %s\n",sub_folder);
+
+
+	if(strlen(sub_folder) > 0)
+		sprintf(list_command,"ls -r %s/%s > list.log",user.username,sub_folder);
+	else
+		sprintf(list_command,"ls -r %s > list.log",user.username);
+
 	system(list_command);
 	FILE *list;
 	list = fopen("list.log","r");
@@ -398,13 +458,14 @@ status list_files()
 	fread(list_data,1,file_size,list);
 	send(new_socket, &file_size, sizeof(int) , 0);
 	send(new_socket, list_data, file_size , 0);
+	system("rm list.log");
 	return SUCCESS;
 }
 
 status get_file()
 {
 	char list_command[100];
-	sprintf(list_command,"ls -r %s > list.log",user.username);
+	sprintf(list_command,"ls -LR %s > list.log",user.username);
 	system(list_command);
 	FILE *list;
 	list = fopen("list.log","r");
@@ -438,21 +499,35 @@ status get_file()
 	int request;
 	char chunk_name[SIZE_STR];
 	char chunk_file_path[100];
+	char chunk_sub_folder[40];
+	
 	int packets = 0;
 
 	for(int count =0; count < 4;count ++ )
 	{
 		request =0;
-		recv(new_socket,&request ,sizeof(int), 0);
+		recv(new_socket,&request ,sizeof(int), 0); //1.1
 		printf("received request %d\n",request);
 
 		if(request == 1)
 		{
 			memset(chunk_file_path,0,sizeof(chunk_file_path));
-			recv(new_socket,chunk_name ,SIZE_STR, 0); //1
+			recv(new_socket,chunk_name ,SIZE_STR, 0); //1.2
 
-			sprintf(chunk_file_path,"%s/%s",user.username,chunk_name);
-			printf("Requested chunk_name %s\n",chunk_file_path);
+			memset(chunk_sub_folder,0,sizeof(chunk_sub_folder));
+			recv(new_socket,chunk_sub_folder ,sizeof(chunk_sub_folder), 0); //1.2
+
+			if(strlen(chunk_sub_folder) > 0)
+			{
+				sprintf(chunk_file_path,"%s/%s/%s",user.username,chunk_sub_folder,chunk_name);
+				printf("Requested chunk_name %s\n",chunk_file_path);	
+			}
+			else
+			{
+				sprintf(chunk_file_path,"%s/%s",user.username,chunk_name);
+				printf("Requested chunk_name %s\n",chunk_file_path);
+			}
+			
 
 			int32_t chunk_size = 0;
 			struct stat file;
@@ -462,7 +537,7 @@ status get_file()
 
 			printf("%s %d\n",chunk_name,chunk_size);
 
-			send(new_socket, &chunk_size, sizeof(chunk_size) , 0); //2
+			send(new_socket, &chunk_size, sizeof(chunk_size) , 0); //1.3
 
 			packets = 0;
 			// if file size is exactly in multiples of BUFFERSIZE
@@ -475,7 +550,7 @@ status get_file()
 			{
 				packets = (chunk_size/BUFFER) + 1;
 			}
-			send(new_socket, &packets, sizeof(packets) , 0); //3
+			send(new_socket, &packets, sizeof(packets) , 0); //1.4
 
 			FILE *data_chunk;
 			data_chunk = fopen(chunk_file_path,"r");
@@ -492,7 +567,13 @@ status get_file()
 
 				frame.length  = fread(frame.file_data,1,BUFFER,data_chunk);
 
-				send(new_socket,&frame ,sizeof(frame), 0); //4
+				for(int elt =0; elt<frame.length ; elt++)
+				{	
+					frame.file_data[elt] ^= KEY;
+				}
+
+
+				send(new_socket,&frame ,sizeof(frame), 0); //1.5
 							
 			}
 
@@ -502,4 +583,32 @@ status get_file()
 
 
 	return SUCCESS;
+}
+void create_folder()
+{
+	char sub_folder_name[SIZE_STR];
+	char folder_path[100];
+
+	recv(new_socket,sub_folder_name ,SIZE_STR, 0);
+	
+	sprintf(folder_path,"%s/%s",user.username,sub_folder_name);
+	
+	DIR *dir = opendir(folder_path);
+	if(dir)
+	{
+		printf("User's folder exists in the server\n");
+	}
+	else
+	{
+		char cmd[100];
+
+		// creating new folder for the user
+		sprintf(cmd,"mkdir -p %s",folder_path);
+
+		system(cmd);
+		
+		#ifdef DEBUG
+		printf("Created Folder for the user: %s\n",folder_path);
+		#endif
+	}
 }

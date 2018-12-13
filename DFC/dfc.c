@@ -21,10 +21,13 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <sys/stat.h>
- 
+#include <signal.h> 
+
 #define BUFFER (2048) 
 //#define DEBUG
 #define SIZE_STR (40)
+
+#define KEY (255)
 /**************************************************************************************
 *                                   Global declaration
 **************************************************************************************/
@@ -68,6 +71,7 @@ int chunk_layout[4][4][2] = {{{0,3},{0,1},{1,2},{2,3}},
 
 char filename_command[40];
 char sub_folder[40];
+char command[20];
 
 struct FRAME
 {
@@ -86,21 +90,24 @@ status LIST();
 status PUT();
 int MD5HASH();
 status login_to_server();
+void create_folder();
 /***************************************************************
 *                      Main Function
 **************************************************************/
 
 int main(int argc, char *argv[])
 {
-	char command[20];
-	char filename[20];
 	char input_choice[30];
+	status status_returned;
 
+conf:
+	status_returned = read_dfc_conf_file();
 
-
-	read_dfc_conf_file();
-
-
+	if(status_returned == ERROR)
+	{
+		printf("Please enter a proper configuration file\n");
+		goto conf;
+	}
 	//establish connection with the servers
 	establish_connection();
 
@@ -115,19 +122,18 @@ int main(int argc, char *argv[])
 		validity[3] = 0;
 		
 		memset(command,0,sizeof(command));
-		memset(filename,0,sizeof(filename));
+		memset(filename_command,0,sizeof(filename_command));
 		memset(input_choice,0,sizeof(input_choice));
+		memset(sub_folder,0,sizeof(sub_folder));
+
 
 		printf("Enter your command:\n");
-		printf("1. LIST \n2. GET <filename>\n3. PUT <filename>\n\n");
+		printf("1. LIST \n2. GET <filename>\n3. PUT <filename>\n4. MKDIR <sub foldername>\n5. EXIT\n\n");
 		scanf(" %[^\n]%*c", input_choice);
 
 		sscanf(input_choice,"%s%s%s",command,filename_command,sub_folder);
 
-		for(int server = 0; server<4;server++)
-		{
-			send(socket_server[server], command, 20 , 0);
-		}
+		
 
 		#ifdef DEBUG
 		printf("filename %s\n",filename_command );
@@ -135,20 +141,60 @@ int main(int argc, char *argv[])
 
 		if(strcmp(command,"LIST")==0)
 		{
+			for(int server = 0; server<4;server++)
+			{
+				send(socket_server[server], command, 20 , 0);
+			}
+
 			login_to_server();
 			LIST();
 		}
 
 		else if( (strcmp(command,"GET")==0))
 		{
+			for(int server = 0; server<4;server++)
+			{
+				send(socket_server[server], command, 20 , 0);
+			}
 			login_to_server();
 			GET();
 		}
 
 		else if( (strcmp(command,"PUT")==0))
 		{
+			FILE *file_existance;
+			file_existance = fopen(filename_command,"r");
+			if(file_existance != NULL)
+			{
+				for(int server = 0; server<4;server++)
+				{
+					send(socket_server[server], command, 20 , 0);
+				}
+				login_to_server();
+				PUT();
+			}
+			else
+			{
+				printf("Requested file not present in client folder\n");
+			}
+		}
+
+		else if( (strcmp(command,"MKDIR")==0))
+		{
+			for(int server = 0; server<4;server++)
+			{
+				send(socket_server[server], command, 20 , 0);
+			}
 			login_to_server();
-			PUT();
+			create_folder();
+		}
+		else if( (strcmp(command,"EXIT")==0))
+		{
+			for(int server = 0; server<4;server++)
+			{
+				send(socket_server[server], command, 20 , 0);
+			}
+			exit(1);
 		}
 		else
 		{
@@ -284,6 +330,8 @@ status establish_connection()
 		tv.tv_usec = 0;
 		setsockopt(socket_server[server], SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(struct timeval));
 
+		signal(SIGPIPE, SIG_IGN);
+
 		
 	}
 	return SUCCESS;
@@ -326,6 +374,7 @@ status PUT()
 		#endif
 
 		char chunk_filename[SIZE_STR];
+		char chunk_sub_folder[SIZE_STR];
 		int packets;
 
 		for(int Chunk_num = 0;Chunk_num < 4 ; Chunk_num++)
@@ -375,6 +424,9 @@ status PUT()
 						//***************Chunk file name*********************//
 						memset(chunk_filename,0,sizeof(chunk_filename));
 						sprintf(chunk_filename,"%s.%d",filename_command,(Chunk_num+1));
+
+						memset(chunk_sub_folder,0,sizeof(chunk_sub_folder));
+						sprintf(chunk_sub_folder,"%s",sub_folder);
 					}
 
 					
@@ -391,8 +443,9 @@ status PUT()
 
 						//send chunk filename
 						send(socket_server[chunk_layout[x][Chunk_num][count]], chunk_filename, SIZE_STR , 0); //1
-					
 
+						send(socket_server[chunk_layout[x][Chunk_num][count]], chunk_sub_folder, SIZE_STR , 0); //1.1
+					
 						send(socket_server[chunk_layout[x][Chunk_num][count]], &chunk_size, sizeof(int) , 0); //2
 
 						send(socket_server[chunk_layout[x][Chunk_num][count]], &packets, sizeof(int) , 0); //3
@@ -402,6 +455,11 @@ status PUT()
 					
 							memset(&frame,0,sizeof(frame));
 							frame.length  = fread(frame.file_data,1,BUFFER,chunk_send);
+
+							for(int elt =0; elt<frame.length ; elt++)
+							{	
+								frame.file_data[elt] ^= KEY;
+							}
 
 							send(socket_server[chunk_layout[x][Chunk_num][count]],&frame ,sizeof(frame), 0); //4
 							
@@ -526,6 +584,8 @@ status LIST()
 	int file_size[4] = {0};
 	FILE *list;
 
+	strcpy(sub_folder, filename_command);
+
 	list = fopen("list.txt","w");
 	if(list == NULL)
 	{
@@ -538,6 +598,8 @@ status LIST()
 	{
 		if(validity[server] == 1)
 		{
+			send(socket_server[server], sub_folder, 40 , 0);
+
 			recv(socket_server[server],&file_size[server] ,sizeof(int), 0);
 
 			char *buffer = (char *)malloc(file_size[server]);
@@ -547,6 +609,8 @@ status LIST()
 				return ERROR;
 			}
 			recv(socket_server[server],buffer ,file_size[server], 0);
+
+			//printf("\n-----\n%s\n",buffer);
 
 			fwrite(buffer,1,file_size[server],list);
 			free(buffer);
@@ -605,8 +669,7 @@ status LIST()
         char *temp = strrchr(line_from_list,'.');
         if(temp == NULL)
         {
-        	printf("No files present in server\n");
-        	return EMPTY;
+        	continue;
         }
 
         *temp = '\0';
@@ -668,7 +731,9 @@ status LIST()
     }
     printf("------------------------------------\n");
     printf("%s\n",display_buffer);
-	free(read_list_database);
+	fclose(read_list_database);
+
+	system("rm list.txt");
 	return SUCCESS;
 }
 
@@ -693,7 +758,7 @@ status GET()
 				return ERROR;
 			}
 			recv(socket_server[server],buffer[server] ,list_size[server], 0);//2
-			printf("buffer[%d]\n---------\n%s\n",server,buffer[server]);
+			//printf("buffer[%d]\n---------\n%s\n",server,buffer[server]);
 		}
 	}
 
@@ -736,6 +801,8 @@ status GET()
 
 					send(socket_server[server], chunk_name, SIZE_STR , 0); //1.2
 
+					send(socket_server[server], sub_folder, sizeof(sub_folder) , 0); //1.2.1
+
 					recv(socket_server[server],&chunk_size ,sizeof(chunk_size), 0); //1.3
 
 					packets = 0;
@@ -746,6 +813,11 @@ status GET()
 						// receiving data from server					
 						memset(&frame,0,sizeof(frame));
 						recv(socket_server[server],&frame ,sizeof(frame), 0); //4
+
+						for(int elt =0; elt<frame.length ; elt++)
+						{	
+							frame.file_data[elt] ^= KEY;
+						}
 
 						fwrite(frame.file_data,1,frame.length,get_data);
 
@@ -780,4 +852,19 @@ status GET()
 			free(buffer[server]);
 	}
 	return SUCCESS;
+}
+
+void create_folder()
+{
+	char sub_folder_name[SIZE_STR];
+	strcpy(sub_folder_name,filename_command);
+
+	for(int server = 0; server < 4; server++)
+	{
+		if(validity[server] == 1)
+		{
+			send(socket_server[server], sub_folder_name, SIZE_STR , 0);
+		}
+	}
+
 }
