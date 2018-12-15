@@ -24,7 +24,7 @@
 #include <errno.h>
 #include <netdb.h>
 #include <dirent.h>
-
+#include <sys/wait.h>
 /**************************************************************************************
 *                                   Macros
 **************************************************************************************/
@@ -119,79 +119,110 @@ int main(int argc, char *argv[])
 	    exit(EXIT_FAILURE);
 	}
 	
-	new_socket = 0;
-	clilen = sizeof(to_address);
-
-	/*Accepting Client connection*/
-	new_socket = accept(server_socket,(struct sockaddr*) &to_address, &clilen);
-	if(new_socket<0)
-	{
-		perror("Error on accepting client");
-		exit(1);
-	}
-	else
-		printf("established connection\n");
+	int child_id;
 
 	while(1)
 	{
-		validity = 0;
-		
+		new_socket = 0;
+		clilen = sizeof(to_address);
 
-		memset(command,0,sizeof(command));
-
-		//receiving the command from client
-
-		recv(new_socket,command ,20, 0);
-
-		//PUT command
-		if(strcmp(command,"PUT")==0)
+		/*Accepting Client connection*/
+		new_socket = accept(server_socket,(struct sockaddr*) &to_address, &clilen);
+		if(new_socket<0)
 		{
-			Login();
-			if(validity == 1)
-			{
-				folder_creation_user();
-				receive_file();
-			}
-		}
-		else if(strcmp(command,"LIST")==0)
-		{
-			Login();
-			if(validity == 1)
-			{
-				list_files();
-			}
-		}
-
-		else if(strcmp(command,"GET")==0)
-		{
-			Login();
-			if(validity == 1)
-			{
-				get_file();
-			}
-		}
-		else if(strcmp(command,"MKDIR")==0)
-		{
-			Login();
-			if(validity == 1)
-			{
-				create_folder();
-			}
-		}
-		else if(strcmp(command,"EXIT")==0)
-		{
+			perror("Error on accepting client");
 			exit(1);
 		}
 		else
-		{
-			printf("Invalid command\n");
-		}
-	}
+			printf("established connection\n");
 
 		
-	exit(EXIT_SUCCESS);
-}
 
+
+		child_id = 0;
+		/*Creating child processes*/
+		/*Returns zero to child process if there is successful child creation*/
+		child_id = fork();
+
+		// error on child process
+		if(child_id < 0)
+		{
+			perror("error on creating child\n");
+			exit(1);
+		}
+
+		//closing the parent
+		if (child_id > 0)
+		{
+			close(new_socket);
+			waitpid(0, NULL, WNOHANG);	//Wait for state change of the child process
+		}
+
+
+		if(child_id == 0)
+		{
+			close(server_socket);
+			memset(command,0,sizeof(command));
+
+			//receiving the command from client
+
+			while(recv(new_socket,command ,20, 0)>0)
+			{
+				validity = 0;
+
+				//PUT command
+				if(strcmp(command,"PUT")==0)
+				{
+					Login();
+					if(validity == 1)
+					{
+						folder_creation_user();
+						receive_file();
+					}
+				}
+				else if(strcmp(command,"LIST")==0)
+				{
+					Login();
+					if(validity == 1)
+					{
+						list_files();
+					}
+				}
+
+				else if(strcmp(command,"GET")==0)
+				{
+					Login();
+					if(validity == 1)
+					{
+						get_file();
+					}
+				}
+				else if(strcmp(command,"MKDIR")==0)
+				{
+					Login();
+					if(validity == 1)
+					{
+						create_folder();
+					}
+				}
+				else if(strcmp(command,"EXIT")==0)
+				{
+					exit(1);
+				}
+				else
+				{
+					printf("Invalid command\n");
+				}
+
+				memset(command,0,sizeof(command));
+
+			}
+			close(new_socket);
+			exit(0);
+		}
+	}
+		
+}
 
 /********************************************************************************************
 *									Local Functions
