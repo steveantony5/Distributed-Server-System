@@ -123,6 +123,8 @@ int main(int argc, char *argv[])
 
 	while(1)
 	{
+
+
 		new_socket = 0;
 		clilen = sizeof(to_address);
 
@@ -168,6 +170,9 @@ int main(int argc, char *argv[])
 
 			while(recv(new_socket,command ,20, 0)>0)
 			{
+
+				printf("-----------------------------\n");
+
 				validity = 0;
 
 				//PUT command
@@ -461,7 +466,7 @@ status list_files()
 	if(strlen(sub_folder) > 0)
 		sprintf(list_command,"ls -r %s/%s > list.log",user.username,sub_folder);
 	else
-		sprintf(list_command,"ls -r %s > list.log",user.username);
+		sprintf(list_command,"find %s -type f -exec basename {} \\; > list.log",user.username);
 
 	system(list_command);
 	FILE *list;
@@ -478,7 +483,6 @@ status list_files()
 	stat("list.log", &file);
 	file_size = file.st_size;
 
-	printf("size %d\n",file_size);
 
 	char *list_data = (char *) malloc(file_size);
 	if(list_data == NULL)
@@ -498,7 +502,15 @@ status list_files()
 status get_file()
 {
 	char list_command[100];
-	sprintf(list_command,"ls -LR %s > list.log",user.username);
+	int sub_folder_existance = 0;
+
+	recv(new_socket,&sub_folder_existance ,sizeof(int), 0);
+
+	if(sub_folder_existance)
+		sprintf(list_command,"ls -LR %s > list.log",user.username);
+	else
+		sprintf(list_command,"ls %s > list.log",user.username);
+
 	system(list_command);
 	FILE *list;
 	list = fopen("list.log","r");
@@ -514,7 +526,6 @@ status get_file()
 	stat("list.log", &file);
 	file_size = file.st_size;
 
-	printf("size %d\n",file_size);
 
 	char *list_data = (char *) malloc(file_size);
 	if(list_data == NULL)
@@ -527,6 +538,8 @@ status get_file()
 
 	send(new_socket, &file_size, sizeof(int) , 0);
 	send(new_socket, list_data, file_size , 0);
+
+	system("rm list.log");
 
     //------------------sending the file-----------------------//
 	int request;
