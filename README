@@ -1,0 +1,49 @@
+---------------------------------------------------------------------------------------
+https://github.com/steveantony5/Distributed-Server-System
+---------------------------------------------------------------------------------------
+To complie the DFS and DFC
+>> make
+
+To execute DFC client
+>> ./dfc <config file>
+
+eg: ./dfc dfc.conf
+
+To delete the executables
+>> make clean
+
+To execute DFS
+>> ./<dfs_no> <port number>
+
+eg: ./dfs1 10001
+-----------------------------------------------------------------------------------------
+* Forking is done for handling multiple
+* Data encryption is done for the data while transfering and retriving
+* User and password validation is performed before each command execution
+
+-----------------------------------------------------------------------------------------
+
+PUT method
+----------
+1) Transfers the file as chunks to the 4 DFS servers. 
+2) The storage space for the chunks will depend on MD5 value of the file
+3) Can also opt to place the files in subfolders
+-----------------------------------------------------------------------------------------
+GET method
+----------
+1) Gets the chunks from the four servers
+2) Traffic optimisation is performed such that only four chunks are received from the four servers
+3) If few servers are out, the file will be recoverd from the active servers if possible. If not, it says as file incomplete
+4) can also retrive files from the sub folders
+-----------------------------------------------------------------------------------------
+LIST method
+----------
+1) List option will list all files recoverable or irrecoverable from the server
+2) LIST <sub folder> will list all files recoverable or irrecoverable from the sub folder
+
+-----------------------------------------------------------------------------------------
+MKDIR method
+----------
+It helps to create sub folders within user folder
+
+-----------------------------------------------------------------------------------------
