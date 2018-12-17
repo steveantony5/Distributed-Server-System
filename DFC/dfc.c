@@ -274,18 +274,20 @@ status read_dfc_conf_file()
 			//reading configuration file
 			fread(config_details,1,file_size,read_dfc_conf);
 
-			//server details
+			//server details parsing from config file
 			char *search = NULL;
 			search  =  strstr(config_details,"Server");
 			if(search!=NULL)
 			{	
 				for(int server=0;server<4;server++)
 				{
+					// ignoring for first search
 					if(server!=0)
 						search  =  strstr(search,"Server");
 
 					if(search!=NULL)
 					{
+						//getting server name, ip address and port number
 						sscanf(search,"%*s %s %s %s",DFS[server].name, DFS[server].ip, DFS[server].port);
 
 						#ifdef DEBUG
@@ -605,6 +607,8 @@ int MD5HASH()
 
   #endif
 
+
+  // Hexa to decimal conversion
   if((md5_value[31] == 'a') || (md5_value[31] == 'b') || (md5_value[31] == 'c') || (md5_value[31] == 'd') || (md5_value[31] == 'e') || (md5_value[31] == 'f'))
   {
     if((md5_value[31] == 'a'))  
